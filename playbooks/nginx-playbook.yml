@@ -1,0 +1,26 @@
+- hosts: webservers
+  remote_user: vagrant
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+#setting load balancer conf for the 2 app servers 
+    - name: Create Nginx default configuration
+      template:
+        src: ../nginx-lb/nginx_default.conf.j2  
+        dest: /etc/nginx/sites-available/default
+      notify:
+        - Reload Nginx
+
+  handlers:
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded
+

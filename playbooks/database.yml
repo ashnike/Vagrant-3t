@@ -1,0 +1,126 @@
+---
+- name: Install and Configure MySQL
+  hosts: database-server
+  vars_files: 
+    - ../database/mysql-cre.yml
+  become: yes
+
+  tasks:
+  #installing mysql 
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Installing MySQL and dependencies
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - mysql-server
+        - python-mysqldb
+        - mysql-client
+        - python3-mysql.connector
+        - libmysqlclient-dev
+      become: yes
+    
+    - name: Install MySQL Client
+      apt:
+        name: mysql-client
+        state: present
+
+    - name: Set MySQL root password
+      mysql_user:
+        name: root
+        password: "{{ mysql_root_password }}"
+        host: localhost
+        update_password: always
+#whitelisting private ip of application server to access db 
+    - name: Allow MySQL Access from appserver
+      ufw:
+        rule: allow
+        port: 3306
+        from_ip: "192.168.57.7"
+      tags:
+        - firewall
+#creating two dbs
+    - name: Create Separate Databases
+      mysql_db:
+        name: "{{ item }}"
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop:
+        - db_one
+        - db_two
+      tags:
+        - databases
+#creating two users with particular db access
+    - name: Create Distinct User Accounts
+      mysql_user:
+        name: "{{ item.name }}"
+        host: "%"
+        password: "{{ item.password }}"
+        priv: "{{ item.privileges }}"
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop:
+        - { name: "{{ mysql_user1 }}", password: "{{ mysql_password1 }}", privileges: 'db_one.*:ALL' }
+        - { name: "{{ mysql_user2 }}", password: "{{ mysql_password2 }}", privileges: 'db_two.*:ALL' }
+      tags:
+        - users
+#cp files from local machine to db for data transfer process
+    - name: Create the target directory for SQL files
+      file:
+        path: "/home/vagrant/database"
+        state: directory
+        mode: '0755'
+
+    - name: Copy SQL files to the remote server
+      copy:
+        src: "{{ item }}"
+        dest: "/home/vagrant/database/{{ item | basename }}"
+      with_items:
+        - "../database/dummy_app1.sql"
+        - "../database/dummy_app2.sql"
+#loading data to the dbs
+    - name: Load db_one SQL data
+      mysql_db:
+        name: db_one
+        state: import
+        target: "/home/vagrant/database/dummy_app1.sql"
+        login_user: "{{ mysql_user1 }}"
+        login_password: "{{ mysql_password1 }}"
+          
+
+    - name: Load db_two SQL data
+      mysql_db:
+        name: db_two
+        state: import
+        target: "/home/vagrant/database/dummy_app2.sql"
+        login_user: "{{ mysql_user2 }}"
+        login_password: "{{ mysql_password2 }}"
+      
+    - name: Set MySQl bind on priv-ip
+      lineinfile:
+        path: /etc/mysql/my.cnf
+        regexp: '^bind-address.*'
+        line: 'bind-address = 192.168.58.4'
+        state: present
+      become: yes
+      notify: restart mysql service
+
+    - name: Set MySQL to listen on port 3306
+      lineinfile:
+        path: /etc/mysql/my.cnf
+        regexp: '^port.*'
+        line: 'port = 3306'
+        state: present
+      become: yes
+      notify: restart mysql service
+
+  handlers:
+    - name: restart mysql service
+      service:
+        name: mysql
+        state: restarted
+

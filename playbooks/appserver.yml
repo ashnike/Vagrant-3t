@@ -1,0 +1,109 @@
+---
+- name: Configure Ubuntu server for Flask apps
+  hosts: appserver
+  become: yes
+  tasks:
+  #installing python and pip
+    - name: Add DeadSnakes PPA for Python 3.5
+      apt_repository:
+        repo: ppa:deadsnakes/ppa
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Python 3.5
+      apt:
+        name: python3.5
+        state: present
+
+    - name: Download pip for Python 3.5
+      command: "curl https://bootstrap.pypa.io/pip/3.5/get-pip.py -o /tmp/get-pip.py"
+
+    - name: Install pip for Python 3.5
+      command: "python3.5 /tmp/get-pip.py"
+      become: yes
+
+    - name: Fix broken dependencies after installing Python 3.5
+      shell: sudo apt-get install -f
+      become: yes
+      
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+
+    - name: Install Flask and other Python dependencies using pip3.5
+      pip:
+        executable: pip3.5
+        name: 
+          - flask
+          - pymysql
+        state: latest
+        
+    # Creating directory for project
+    - name: Create directories for Flask apps
+      file:
+        path: "/home/vagrant/{{ item }}"
+        state: directory
+        owner: vagrant
+        group: vagrant
+        mode: '0755'
+      loop:
+        - app1
+        - app2
+    - name: Create a directory named "prod"
+      file:
+        path: "/home/vagrant/prod"
+        state: directory
+        owner: vagrant
+        group: vagrant
+        mode: '0755'
+
+    - name: Copy code files to the server
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: vagrant
+        group: vagrant
+      loop:
+        - { src: "../appserver/app1/app1.py", dest: "/home/vagrant/prod/app1.py" }
+        - { src: "../appserver/app2/app2.py", dest: "/home/vagrant/prod/app2.py" }
+   
+   #installing virtual env and dependencies
+   
+    - name: Install virtualenv using pip
+      pip:
+        name: virtualenv
+        executable: pip  
+
+    - name: Create a virtual environment
+      command: virtualenv /home/vagrant/prod/myenv
+      become_user: vagrant
+
+    - name: Activate the virtual environment
+      shell: "source /home/vagrant/prod/myenv/bin/activate"
+      args:
+        executable: /bin/bash
+      become_user: vagrant
+
+    - name: Install Flask and other dependencies using pip
+      pip:
+        executable: /home/vagrant/prod/myenv/bin/pip
+        name: 
+          - flask
+          - pymysql
+        state: latest
+    #setting no hup to run the apps in the background
+
+    - name: Start app1
+      shell: "nohup /home/vagrant/prod/myenv/bin/python /home/vagrant/prod/app1.py >/dev/null 2>&1 &"
+      become_user: vagrant
+      async: 60
+      poll: 0
+
+    - name: Start app2
+      shell: "nohup /home/vagrant/prod/myenv/bin/python /home/vagrant/prod/app2.py >/dev/null 2>&1 &"
+      become_user: vagrant
+      async: 60
+      poll: 0

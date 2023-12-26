@@ -1,0 +1,5 @@
+mysql_root_password: "root123"
+mysql_user1: user1
+mysql_password1: password1
+mysql_user2: user2
+mysql_password2: password2
